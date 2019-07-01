@@ -22,19 +22,19 @@ static const char* TAG = "Ultrasonic LED";
 
 //the LED pin numbers
 #define LEDC_HS_CH0_GPIO 18
-#define LEDC_CH_NUM 1 //number of LEDs
+#define LEDC_CH_NUM 1
 
 //other LED settings
 #define LEDC_PWM_DUTY_RES LEDC_TIMER_13_BIT //13-bit pwm resolution
 #define MIN_LEDC_FREQ_HZ 0
-#define MAX_LEDC_FREQ_HZ 8000
+#define MAX_LEDC_FREQ_HZ 6000
 #define MAX_DISTANCE_CM  50.0 //the max distance for the sensor to detect
 
 #define BLINK_THRESHOLD 0.80 //blinking threshold for the LED
 #define HISTORY_NUM 4 //number of points to average for LED brightness smoothing
 
 //the ultrasonic sensor pin numbers
-#define TRIGGER_GPIO 16 //the output pin
+#define TRIGGER_GPIO 4 //the output pin
 #define ECHO_GPIO 5 //the input pin
 
 #define SPEED_OF_SOUND 343.0 //in m/s
@@ -42,10 +42,6 @@ static const char* TAG = "Ultrasonic LED";
 #define MAX_MICROSECONDS  (MAX_DISTANCE_CM / CM_PER_MICROSECOND * 2.0) //the sensor timeout
 
 #define milliseconds(ms) (ms / portTICK_PERIOD_MS)
-
-// printf("CM_PER_MICROSECOND: %f\n", CM_PER_MICROSECOND);
-// printf("MAX_MICROSECONDS: %ld\n", MAX_MICROSECONDS);
-
 
 
 // LED configuration
@@ -65,11 +61,11 @@ static void config_leds(){
   // Set configuration of timer0 for high speed channels
   ledc_timer_config(&ledc_timer);
 
-  ledc_channel[0].channel    = LEDC_CHANNEL_0;
-  ledc_channel[0].duty       = 0;
-  ledc_channel[0].gpio_num   = LEDC_HS_CH0_GPIO;
+  ledc_channel[0].channel = LEDC_CHANNEL_0;
+  ledc_channel[0].duty = 0;
+  ledc_channel[0].gpio_num = LEDC_HS_CH0_GPIO;
   ledc_channel[0].speed_mode = LEDC_HIGH_SPEED_MODE;
-  ledc_channel[0].timer_sel  = LEDC_TIMER_0;
+  ledc_channel[0].timer_sel = LEDC_TIMER_0;
 
   // set LED Controller with defined configuration
   for (int ch = 0; ch < LEDC_CH_NUM; ch++) {
@@ -93,6 +89,7 @@ static void set_ledc_pwm(uint32_t duty){
 static void config_gpio(){
 
   gpio_config_t gpio_conf;
+
   gpio_conf.intr_type = GPIO_INTR_DISABLE; //disable interrupt
   gpio_conf.mode = GPIO_MODE_OUTPUT; //output pin
   gpio_conf.pin_bit_mask = (1 << TRIGGER_GPIO);
@@ -103,7 +100,7 @@ static void config_gpio(){
   gpio_conf.intr_type = GPIO_INTR_DISABLE;
   gpio_conf.pin_bit_mask = (1 << ECHO_GPIO);
   gpio_conf.mode = GPIO_MODE_INPUT; //input pin
-  gpio_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;//pull the pin down to low
+  gpio_conf.pull_down_en = GPIO_PULLDOWN_ENABLE; //pull the pin down to low
   gpio_conf.pull_up_en = GPIO_PULLUP_DISABLE;
   gpio_config(&gpio_conf);
 
@@ -115,24 +112,23 @@ static void ultrasonic_trigger(){
   gpio_set_level(TRIGGER_GPIO, 0);
   usleep(5);
   gpio_set_level(TRIGGER_GPIO, 1);
-  // vTaskDelay(1 / portTICK_PERIOD_MS);
   usleep(10);
   gpio_set_level(TRIGGER_GPIO, 0);
-  // ESP_LOGI(TAG, "Triggered the trigger pin.");
 
 }
 
+// a struct for LED/sensor information
 struct LEDI
 {
-  int64_t brt0;
-  int64_t bt0;
-  int blinks;
-  int blink_state;
-  uint32_t read_duty;
-  uint32_t duty;
-  double cm;
-  int64_t ping_time;
-  double brightness_scale;
+  int64_t brt0; //the blink "reset" timer
+  int64_t bt0; //the blink timer
+  int blinks; //how many blinks have occurred
+  int blink_state; //whether or not the LED is OFF or ON
+  uint32_t read_duty; //current duty as "read" by the sensor
+  uint32_t duty; //the duty of th LED
+  double cm; //distance determined by the sensor
+  int64_t ping_time; //sensor ping time
+  double brightness_scale; //the brightness scaled from 0 to 1
 };
 
 
@@ -208,7 +204,6 @@ static void calc_distance(struct LEDI *ledi){
     }
   }
 
-  //reset comparison time as soon as the previous loop is broken
   t0 = esp_timer_get_time();
 
   if(ping_time < MAX_MICROSECONDS){
@@ -225,6 +220,7 @@ static void calc_distance(struct LEDI *ledi){
   ledi->cm = (double)ledi->ping_time * CM_PER_MICROSECOND / 2.0;
   ledi->brightness_scale = (MAX_DISTANCE_CM - ledi->cm) / MAX_DISTANCE_CM;
   ledi->read_duty = (double)(MAX_LEDC_FREQ_HZ - MIN_LEDC_FREQ_HZ) * ledi->brightness_scale + MIN_LEDC_FREQ_HZ;
+
 }
 
 
@@ -234,9 +230,7 @@ static void ultrasonic_task(void* arg){
   //subscribe the task to the watchdog timer
   esp_task_wdt_add(NULL);
 
-
   int64_t pt0 = esp_timer_get_time(); //print info timer
-
 
   struct LEDI ledi;
   ledi.brt0 = esp_timer_get_time();
@@ -291,7 +285,6 @@ static void ultrasonic_task(void* arg){
   }
 
 }
-
 
 
 
